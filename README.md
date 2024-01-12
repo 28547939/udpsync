@@ -11,6 +11,8 @@ local/path MTU. Reliable transmission is achieved by retransmitting blocks a fix
 of times (since no feedback on delivery is available from the remote endpoint).
 Blocks are transmitted as part of "ranges" of blocks, with each range being typically 
 no more than a few hundred or 1-2 thousand blocks.
+Retransmission takes place on the level of ranges; ranges, not individual blocks are 
+retransmitted.
 
 ### Options
 
@@ -26,6 +28,8 @@ Generally, the more lossy the network, the larger the `range-size`, `total-retra
 `delay-usec` will need to be. Since packet loss is generally bursty, a large `range-size` results
 in a lower likelihood that any given block will be lost (not received in any of the retransmits),
 since clusters of lost packets will be randomly distributed across the range with each retransmission.
+So to be lost, a block will have to be part of a packet loss cluster on every retransmission.
+(One way this can happen is if there's an extended period of packet loss)
 
 ### Other notes
 
