@@ -3,7 +3,7 @@
 
 `udpsync` is a simple utility to send the contents of a file over a network when there
 is only one-way communication available; UDP is used because responses are not available.
-The utility can be seen as a "network <pre>dd</pre>" with reduced functionality but with the
+The utility can be seen as a "network `dd`" with reduced functionality but with the
 addition of settings concerning retransmission, for example.
 
 Data is transmitted in 1024-byte "blocks", which is assumed to be adequately small for the 
