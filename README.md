@@ -34,8 +34,6 @@ So to be lost, a block will have to be part of a packet loss cluster on every re
 ### Other notes
 
 * There is a maximum of `2^32` blocks per file (1TB)
-* Using `delay-usec` instead of providing a limit on bandwidth (not yet implemented) allows
-    the user to more closely control the sender's packet-per-second rate.
 * Upon completion, the receiving side will scan for blocks that it did not receive and print
     out a list. This can be used to manually repair the received file.
 
