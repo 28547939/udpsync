@@ -366,7 +366,7 @@ int main(int argc, char **argv)
     int range_size = 128;
     int limit_blocks = 0;
     int skip_blocks = 0;
-    int delay_usec = 0;
+    int delay_usec = 1000;
 
     for (int i = 0; i < argc; i++) {
         if (strcmp(argv[i], "--receive") == 0) {
