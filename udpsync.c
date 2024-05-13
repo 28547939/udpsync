@@ -17,7 +17,7 @@
 
 #include <stdio.h>
 
-#define BLOCK_SIZE    1024
+#define BLOCK_SIZE    512
 
 void print_hex(const u_char * buf, size_t len) {
 
@@ -56,8 +56,6 @@ void send_file (
     struct sockaddr_in dst_addr, const char *path, size_t total_retransmits, 
     size_t range_size, size_t skip_blocks, size_t limit_blocks, int delay_usec
 ) {
-
-
     int sock;
     if ( (sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
         perror("socket creation failed"); 
@@ -89,12 +87,13 @@ void send_file (
     while (1) {
         for (size_t transmit_id = 0; transmit_id <= total_retransmits; transmit_id++) {
 
+            // hold the range in memory while we read blocks from it
             u_char *range = malloc(range_size * BLOCK_SIZE);
 
             // read into blocks
 
             // just retrieve the current position
-            // here the current position is always a multiple of 1024 (possibly 0)
+            // here the current position is always a multiple of BLOCK_SIZE (possibly 0)
             size_t current_range_start = lseek(fd, 0, SEEK_CUR);
             // read in a range (possibly with less than range_size * BLOCK_SIZE bytes, if we're at the end)
             size_t current_range_bytes = read(fd, (void *)range, range_size * BLOCK_SIZE);
@@ -113,7 +112,7 @@ void send_file (
             for (size_t range_block_id = 0; range_block_id < range_size; range_block_id++) {
 
                 size_t sent_blocks = sent_ranges * range_size + range_block_id;
-                size_t block_id = current_range_start / 1024 + range_block_id;
+                size_t block_id = current_range_start / BLOCK_SIZE + range_block_id;
                 current_block_id = block_id;
 
                 // starting position for this iteration within the range
@@ -130,9 +129,7 @@ void send_file (
                     break;
                 }
 
-
-                u_char newbuf[BLOCK_SIZE+4];
-
+                u_char newbuf[ (BLOCK_SIZE * 2) + 4 ];
 
                 // for a "truncated" range (at end of file) - we have reached the end of the file
                 // retransmits will continue
@@ -144,14 +141,17 @@ void send_file (
 
                 buf_set_block_id(newbuf, block_id);
 
+                // redundancy: two copies of the block
                 memcpy(newbuf+4, (const void *)(range + range_block_id * BLOCK_SIZE), BLOCK_SIZE);
+                memcpy(newbuf+BLOCK_SIZE+4, (const void *)(range + range_block_id * BLOCK_SIZE), BLOCK_SIZE);
 
+                // length of the block itself
                 size_t block_len = startpos + BLOCK_SIZE > current_range_bytes 
                     ? current_range_bytes - startpos : BLOCK_SIZE;
 
                 //print_hex(newbuf, block_len + 4);
 
-                int n = sendto(sock, newbuf, block_len + 4, 0, 
+                int n = sendto(sock, newbuf, block_len*2 + 4, 0, 
                     (const struct sockaddr *)&dst_addr, 
                     sizeof(dst_addr)
                 );
@@ -208,6 +208,10 @@ void send_file (
 }
 
 
+// bool_list linked-list of bool arrays - sender registers receipt of data per block ID
+// after end-of-transmission is signaled to the receiver, we check the bool_list to confirm
+// that all blocks were received
+
 struct bool_list {
     size_t start_id;
     bool data[1024];
@@ -252,6 +256,8 @@ size_t print_missing(struct bool_list *recvlist, size_t current_block_id) {
         size_t block_id = recvlist->start_id + local_id;
 
         // our recvlist may go further, but we look no further than current_block_id 
+        // (our caller knows how far the list should extend - we don't know whether an
+        // empty value is a missing block or a block that's outside of the range of data sent)
         if (block_id >= current_block_id) {
             return missing;
         }
@@ -297,7 +303,7 @@ void recv_file(struct sockaddr_in bind_to, const char *path, size_t skip_blocks)
     fprintf(stdout, "listening on port %d\n", ntohs(bind_to.sin_port));
 
     u_char buf[1032];
-    u_char block[1024];
+    u_char block[512];
     size_t current_block_id = 0;
 
     while (1) {
@@ -323,22 +329,46 @@ void recv_file(struct sockaddr_in bind_to, const char *path, size_t skip_blocks)
             break;
         }
 
-        size_t block_len = len - 4;
+        size_t blockbuf_len = len - 4;
+
+        if (blockbuf_len % 2 != 0) {
+            fprintf(stdout, "block_id=%lu invalid length %lu, skipping\n", block_id, blockbuf_len);
+            continue;
+        }
 
         //print_hex(buf, len);
 
+        // from earlier check, we know it's even
+        int block_len = blockbuf_len/2;
+
+        // check integrity - compare the two copies
+        int i = 0;
+        for ( ; i < block_len; i++) {
+            if (buf[i+4] != buf[i+4+512]) {
+                fprintf(stdout, "block_id=%lu byte at position %d is corrupt (values %d, %d)\n", 
+                    block_id, i, buf[i+4], buf[i+4+512]
+                );
+                break;
+            }
+        }
+
+
+        // a comparison failed
+        if (i != block_len) {
+            fprintf(stdout, "block_id=%lu blockbuf_len=%d redundant block not identical at byte %d, skipping block\n", 
+                block_id, block_len, i
+            );
+            continue;
+        } 
+
         memcpy(block, buf+4, block_len);
-
-        fprintf(stdout, "block_id=%lu block_len=%lu\n", block_id, block_len);
-
         set_received(recvlist, block_id);
-
         lseek(fd, (block_id - skip_blocks) * BLOCK_SIZE, SEEK_SET);
         write(fd, (const void *)(buf+4), block_len);
+        fprintf(stdout, "block_id=%lu blockbuf_len=%d wrote block\n", block_id, block_len);
 
 
         // optionally, skip blocks already written (do later)
-
     }
 
     // final block ID is current_block_id - 1

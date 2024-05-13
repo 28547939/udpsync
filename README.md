@@ -6,13 +6,22 @@ is only one-way communication available; UDP is used because responses are not a
 The utility can be seen as a "network `dd`" with reduced functionality but with the
 addition of settings concerning retransmission, for example.
 
-Data is transmitted in 1024-byte "blocks", which is assumed to be adequately small for the 
-local/path MTU. Reliable transmission is achieved by retransmitting blocks a fixed number
+Data is transmitted in 512-byte "blocks", with two copies of each block being transmitted 
+in each packet for redundancy (specifically to detect, but not correct errors).
+So each packet's buffer is 1024 bytes, which is assumed to be small enough for the local/path MTU.
+Reliable transmission is further achieved by retransmitting blocks a fixed number
 of times (since no feedback on delivery is available from the remote endpoint).
 Blocks are transmitted as part of "ranges" of blocks, with each range being typically 
 no more than a few hundred or 1-2 thousand blocks.
 Retransmission takes place on the level of ranges; ranges, not individual blocks are 
 retransmitted.
+
+Previously, the receiving side wrote to disk all retransmitted copies of a block (retransmitted
+as part of a retransmitted range), which means that the last transmission, even if corrupt, 
+would overwrite all the others.
+This is the rationale behind the updated method, of sending two copies of the same 512-byte block in 
+each 1024-byte buffer and confirming that they match before writing to disk, since otherwise there 
+would be no protection against corrupted blocks within the final retransmission(s) of a range.
 
 ### Options
 
@@ -55,3 +64,10 @@ Receiving side
 # ./udpsync --receive --address $ADDRESS --port $PORT --path $DSTPATH
 
 ```
+
+### Testing
+
+The `small-test.sh` script creates a 1MB file and tests the sender and receiver locally (checking
+that the received data is identical to the sent data). The test data generation function uses the 
+same block of ASCII text repeatedly, and it's designed to be very clear when and where data has been 
+lost or corrupted.
