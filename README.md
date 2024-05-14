@@ -42,7 +42,7 @@ So to be lost, a block will have to be part of a packet loss cluster on every re
 
 ### Other notes
 
-* There is a maximum of `2^32` blocks per file (1TB)
+* There is a maximum of `2^32` blocks per file (2TB)
 * Upon completion, the receiving side will scan for blocks that it did not receive and print
     out a list. This can be used to manually repair the received file.
 
